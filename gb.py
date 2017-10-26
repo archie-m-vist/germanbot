@@ -12,18 +12,24 @@ extensions = []
 
 class SENPAIReader:
    # events to ignore for Discord
-   nonEvents = set(["Stats Found", "Stats Lost", "Clock Started", "Clock Stopped"])
+   nonEvents = set(["Clock Started", "Clock Stopped"])
    allowedTypes = set([discord.ChannelType.text, discord.ChannelType.private, discord.ChannelType.group])
 
    def __init__ (self, bot):
       self.bot = bot
       self.reader = SENPAI()
-      bot.loop.create_task(self.read_senpai())
       self.active_channels = set([])
+      self.homeName = None
+      self.awayName = None
+      self.homeScore = 0
+      self.awayScore = 0
+      print("reader initialised")
+      bot.loop.create_task(self.read_senpai())
 
    async def read_senpai(self):
       # wait until bot is ready
       await self.bot.wait_until_ready()
+      print("ready for SENPAI")
       # build list of permitted channels by iterating over servers
       for server in bot.servers:
          # get user ID for this specific server
@@ -43,7 +49,33 @@ class SENPAIReader:
             continue
          # teams changed announces next match
          elif event.event == "Teams Changed":
-            message = "Up Next: {} vs. {}".format(event.home.teamname, event.away.teamname)
+            self.homeName = event.home.teamname
+            self.awayName = event.away.teamname
+            message = "Up Next: {} vs. {}".format(self.homeName, self.awayName)
+         # stats found announces kickoff
+         elif event.event == "Stats Found":
+            self.homeScore = 0
+            self.awayScore = 0
+            message = "Kickoff: {} vs. {}".format(self.homeName, self.awayName)
+         # stats lost announces game end
+         elif event.event == "Stats Lost":
+            message = "Final Score: {} {} - {} {}".format(self.homeScore, self.homeName, self.awayScore, self.awayName)
+         # goal should update score, and has special mesage
+         elif event.event == "Goal":
+            # mark down score
+            if event.team == "Home":
+               self.homeScore += 1
+               team = self.homeName
+            else:
+               self.awayScore += 1
+               team = self.awayName
+            message = "**Goal!** {} scores for {}".format(event.scorer.name, team)
+            if event.assister is not None:
+               message += ", assisted by {}.".format(event.assister.name)
+            else:
+               message += "."
+            # wait for goals
+            await asyncio.sleep(20)
          # otherwise just print the event
          else:
             message = str(event)
@@ -62,6 +94,7 @@ async def on_ready():
    print("Connected to Discord.")
    print(bot.user.name)
    print(bot.user.id)
+   reader = SENPAIReader(bot)
    print("-- loading extensions --")
    bot.edit_profile(username="GermanBot")
    for extension in extensions:
